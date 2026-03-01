@@ -1,9 +1,10 @@
-using Serialization
+using JLD2
 using Plots
 using LaTeXStrings
+using Statistics
 
 if length(ARGS) != 1
-    println(stderr, "Usage: julia visualize.jl <path_to_checkpoint.jls>")
+    println(stderr, "Usage: julia visualize.jl <path_to_checkpoint.jld2>")
     exit(1)
 end
 
@@ -14,40 +15,42 @@ if !isfile(checkpoint_path)
     exit(1)
 end
 
-data = deserialize(checkpoint_path)
+data = jldopen(checkpoint_path, "r") do file
+    Dict(k => file[k] for k in keys(file))
+end
+
 trace = data["complete_trace"]
 
-iterations = [t["i"] for t in trace]
-loss = [t["L"] for t in trace]
-σ_mean = [t["σ_mean"] for t in trace]
-σ_var = [t["σ_var"] for t in trace]
+iterations = [t.i for t in trace]
+loss = [t.L for t in trace]
+σ_mean = [t.σ_mean for t in trace]
+σ_var = [t.σ_var for t in trace]
 
 σ_std = sqrt.(σ_var)
 
 p1 = plot(
     iterations, loss,
+    title = "Objective Loss",
     xlabel = "Iteration",
     ylabel = "Loss",
-    title = "Objective Loss",
     color = :red,
-    linewidth = 2
+    legend = false,
 )
 
 p2 = plot(
-    iterations, sigma_mean,
+    iterations, σ_mean,
     ribbon = σ_std,
     fillalpha = 0.3,
-    label = L"\mathrm{E}[\sigma] ± \sqrt{\mathrm{Var}(\sigma)}",
-    xlabel = "Iteration",
-    ylabel = "σ",
     title = "Strategy Parameter Dynamics",
+    xlabel = "Iteration",
+    ylabel = L"\mathrm{E}[\sigma] \pm \sqrt{\mathrm{Var}(\sigma)}",
     color = :blue,
-    linewidth = 2
+    legend = false,
 )
 
-fig = plot(p1, p2, layout = (2, 1), size = (800, 600), margin = 5Plots.mm)
+fig = plot(p1, p2, layout = (2, 1), size = (1200, 900), margin = 5Plots.mm)
 
 display(fig)
 
-println("Plot rendered. Press Enter to close the window and terminate the script.")
+println("Plot rendered. Press Enter to close the window.")
 readline()

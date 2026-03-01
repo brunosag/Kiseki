@@ -24,7 +24,7 @@ function select_population!(
         pop_offspring, str_offspring, fitness_offspring,
         buffers, config::ESConfig
     )
-    μ, λ = config.μ, config.λ
+    μ = config.μ
     partialsortperm!(buffers.sort_idx, fitness_offspring, 1:μ)
     pop_parents .= pop_offspring[:, buffers.sort_idx[1:μ]]
     str_parents .= str_offspring[:, buffers.sort_idx[1:μ]]
@@ -44,6 +44,15 @@ function train_evolution(
     N = length(θ_flat)
     axes_flat = getaxes(θ_flat)
 
+    layer_ranges = UnitRange{Int}[]
+    offset = 1
+    for k in keys(θ_flat)
+        len = length(θ_flat[k])
+        push!(layer_ranges, offset:(offset + len - 1))
+        offset += len
+    end
+    L = length(layer_ranges)
+
     TraceType = NamedTuple{(:i, :L, :σ_var, :σ_mean), Tuple{Int, Float32, Float32, Float32}}
     complete_trace = TraceType[]
     best_test_acc = 0.0
@@ -53,13 +62,16 @@ function train_evolution(
     if !isnothing(checkpoint_data)
         θ_latest = checkpoint_data["θ"]
         σ_latest = checkpoint_data["σ"]
+        if length(σ_latest) == N
+            σ_latest = fill(mean(σ_latest), L)
+        end
         i₀ = checkpoint_data["i"]
         best_test_acc = get(checkpoint_data, "test_acc", 0.0)
         complete_trace = get(checkpoint_data, "complete_trace", complete_trace)
         θ_ema = get(checkpoint_data, "θ_ema", copy(θ_latest))
     else
         θ_latest = Vector{Float32}(θ_flat)
-        σ_latest = fill(0.01f0, N)
+        σ_latest = fill(0.01f0, L)
         θ_ema = copy(θ_latest)
     end
 
@@ -70,18 +82,16 @@ function train_evolution(
     fitness_parents = fill(Inf32, μ)
 
     pop_offspring = Matrix{Float32}(undef, N, λ)
-    str_offspring = Matrix{Float32}(undef, N, λ)
+    str_offspring = Matrix{Float32}(undef, L, λ)
     fitness_offspring = zeros(Float32, λ)
 
     buffers = (
-        combined_pop = Matrix{Float32}(undef, N, μ + λ),
-        combined_str = Matrix{Float32}(undef, N, μ + λ),
-        combined_fitness = Vector{Float32}(undef, μ + λ),
         sort_idx = collect(1:λ),
+        σ_expanded = Matrix{Float32}(undef, N, λ),
     )
 
-    τ = Float32(1.0 / sqrt(2.0 * sqrt(N)))
-    τ′ = Float32(1.0 / sqrt(2.0 * N))
+    τ = Float32(1.0 / sqrt(2.0 * sqrt(L)))
+    τ′ = Float32(1.0 / sqrt(2.0 * L))
 
     prev_checkpoint = Ref{String}(isnothing(resume_file) ? "" : resume_file)
     cb_state = CheckpointCallback(
@@ -105,11 +115,16 @@ function train_evolution(
             σ_avg = dropdims(sum(str_parents, dims = 2), dims = 2) ./ Float32(μ)
 
             ϵ_0 = randn(rng, Float32, 1, λ)
-            ϵ_i = randn(rng, Float32, N, λ)
+            ϵ_l = randn(rng, Float32, L, λ)
             ϵ_θ = randn(rng, Float32, N, λ)
 
-            str_offspring .= σ_avg .* exp.(τ′ .* ϵ_0 .+ τ .* ϵ_i)
-            pop_offspring .= θ_avg .+ str_offspring .* ϵ_θ
+            str_offspring .= σ_avg .* exp.(τ′ .* ϵ_0 .+ τ .* ϵ_l)
+
+            for l in 1:L
+                buffers.σ_expanded[layer_ranges[l], :] .= view(str_offspring, l:l, :)
+            end
+
+            pop_offspring .= θ_avg .+ buffers.σ_expanded .* ϵ_θ
 
             @batch for j in 1:λ
                 θ_ind = ComponentArray(@view(pop_offspring[:, j]), axes_flat)
