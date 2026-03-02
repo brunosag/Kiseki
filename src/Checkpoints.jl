@@ -21,7 +21,8 @@ function save_checkpoint(
         prev_checkpoint::Ref{String}, dir::String
     )
     time_str = Dates.format(Dates.now(), "yyyy-mm-ddTHHMMSS")
-    base_name = @sprintf("ES_A%04d_I%d_%s.jld2", round(Int, test_acc * 100), global_iter, time_str)
+
+    base_name = @sprintf("ES_A%04d_I%d_%s.jld2", round(Int, test_acc * 10000.0), global_iter, time_str)
     filename = joinpath(abspath(dir), base_name)
     temp_filename = filename * ".tmp"
 

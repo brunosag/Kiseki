@@ -57,7 +57,7 @@ function select_population!(
 end
 
 function train_evolution(
-        model; I = 10000, batchsize = 1024, checkpoint_Δi = 50,
+        model; I = 10000, batchsize = 1024, checkpoint_Δi = 10,
         batch_scheduler::AbstractBatchScheduler = ConstantScheduler(10),
         resume_file = nothing, lossfn = CrossEntropyLoss(; logits = Val(true)),
         es_config = ESConfig(), save_dir = pwd(), rng = Random.default_rng()
@@ -82,6 +82,7 @@ function train_evolution(
 
     TraceType = NamedTuple{(:i, :L, :σ_var, :σ_mean, :batch_interval, :σ), Tuple{Int, Float32, Float32, Float32, Int, Vector{Float32}}}
     complete_trace = TraceType[]
+    accuracy_trace = Tuple{Int, Float64}[]
     best_test_acc = 0.0
     i₀ = 0
 
@@ -95,6 +96,7 @@ function train_evolution(
         i₀ = checkpoint_data["i"]
         best_test_acc = get(checkpoint_data, "test_acc", 0.0)
         complete_trace = get(checkpoint_data, "complete_trace", complete_trace)
+        accuracy_trace = get(checkpoint_data, "accuracy_trace", accuracy_trace)
         θ_ema = get(checkpoint_data, "θ_ema", copy(θ_latest))
     else
         θ_latest = Vector{Float32}(θ_flat)
@@ -122,7 +124,7 @@ function train_evolution(
 
     prev_checkpoint = Ref{String}(isnothing(resume_file) ? "" : resume_file)
     cb_state = CheckpointCallback(
-        i₀, 0, checkpoint_Δi, time(), complete_trace,
+        i₀, 0, checkpoint_Δi, time(), complete_trace, accuracy_trace,
         model, s, axes_flat, test_dataloader,
         best_test_acc, prev_checkpoint, save_dir, i₀
     )
@@ -160,7 +162,7 @@ function train_evolution(
         ϵ_l = randn(rng, Float32, L, λ)
         ϵ_θ = randn(rng, Float32, N, λ)
 
-        str_offspring .= σ_avg .* exp.(τ′ .* ϵ_0 .+ τ .* ϵ_l)
+        str_offspring .= max.(1.0f-5, σ_avg .* exp.(τ′ .* ϵ_0 .+ τ .* ϵ_l))
 
         for l in 1:L
             buffers.σ_expanded[layer_ranges[l], :] .= view(str_offspring, l:l, :)

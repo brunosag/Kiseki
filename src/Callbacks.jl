@@ -14,6 +14,7 @@ mutable struct CheckpointCallback{M, S, DL, T} <: Function
     checkpoint_Δi::Int
     i_timer::Float64
     complete_trace::Vector{T}
+    accuracy_trace::Vector{Tuple{Int, Float64}}
     model::M
     st::S
     axes::Any
@@ -62,9 +63,11 @@ function (cb::CheckpointCallback)(trace_record)
     if trace_record.iteration == cb.checkpoint_Δi
         θ_current = ComponentArray(meta.θ_ema, cb.axes)
         recent_traces = @view cb.complete_trace[max(1, end - cb.checkpoint_Δi + 1):end]
-        rolling_loss = sum(t.L for t in recent_traces) / length(recent_traces)
 
-        test_acc = accuracy(cb.model, θ_current, cb.st, cb.test_dataloader)
+        raw_acc = accuracy(cb.model, θ_current, cb.st, cb.test_dataloader)
+        test_acc = raw_acc > 1.0 ? raw_acc / 100.0 : raw_acc
+
+        push!(cb.accuracy_trace, (global_i, test_acc))
 
         if test_acc > cb.best_test_acc
             cb.best_test_acc = test_acc
@@ -75,16 +78,16 @@ function (cb::CheckpointCallback)(trace_record)
                 "θ" => meta.θ,
                 "σ" => meta.σ,
                 "θ_ema" => meta.θ_ema,
-                "rolling_loss" => rolling_loss,
                 "test_acc" => test_acc,
-                "complete_trace" => cb.complete_trace
+                "complete_trace" => cb.complete_trace,
+                "accuracy_trace" => cb.accuracy_trace
             )
 
             save_checkpoint(checkpoint_data, test_acc, global_i, cb.prev_checkpoint, cb.save_dir)
 
-            @printf("\n[Checkpoint Saved] Iter: %d \t Current Loss: %.4f \t Rolling Loss: %.4f \t Test Acc: %.2f%%\n\n", global_i, meta.L, rolling_loss, test_acc)
+            @printf("\n[Checkpoint Saved] i = %d \t L(𝛉) = %.6f \t Accuracy = %.2f%%\n\n", global_i, meta.L, test_acc * 100.0)
         else
-            @printf("\n[Skipped Checkpoint] Iter: %d \t Current Loss: %.4f \t Rolling Loss: %.4f \t Test Acc: %.2f%% (Best: %.2f%%)\n\n", global_i, meta.L, rolling_loss, test_acc, cb.best_test_acc)
+            @printf("\n[Skipped Checkpoint] i = %d \t L(𝛉) = %.6f \t Accuracy = %.2f%% (Best: %.2f%%)\n\n", global_i, meta.L, test_acc * 100.0, cb.best_test_acc * 100.0)
         end
     end
     return false
