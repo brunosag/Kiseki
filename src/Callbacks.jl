@@ -36,7 +36,17 @@ function (cb::CheckpointCallback)(trace_record)
 
     meta = trace_record.metadata
 
-    @printf("Iter: %d \t Loss: %.6f \t Time: %.2fs\n", global_i, meta.L, elapsed)
+    if meta.interval_changed
+        @printf("[Scheduler] Batch interval updated to: %d\n", meta.batch_interval)
+    end
+
+    if meta.batch_changed
+        @printf("[DataLoader] Sampled new data batch.\n")
+    end
+
+    σ_str = join([@sprintf("%.5f", s) for s in meta.σ], ", ")
+
+    @printf("i = %d \t L(𝛉) = %.6f \t Δt = %.2fs \t 𝛔 = [%s]\n", global_i, meta.L, elapsed, σ_str)
 
     push!(
         cb.complete_trace, (
@@ -44,6 +54,8 @@ function (cb::CheckpointCallback)(trace_record)
             L = Float32(meta.L),
             σ_var = Float32(var(meta.σ)),
             σ_mean = Float32(mean(meta.σ)),
+            batch_interval = meta.batch_interval,
+            σ = copy(meta.σ),
         )
     )
 

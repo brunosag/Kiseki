@@ -19,7 +19,6 @@ function main()
         rng = rng,
         resume_file = resume_target,
         save_dir = checkpoint_dir,
-        checkpoint_Δi = 10,
     )
 end
 

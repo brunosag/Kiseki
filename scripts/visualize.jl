@@ -1,7 +1,6 @@
 using JLD2
 using Plots
 using LaTeXStrings
-using Statistics
 
 if length(ARGS) != 1
     println(stderr, "Usage: julia visualize.jl <path_to_checkpoint.jld2>")
@@ -23,10 +22,9 @@ trace = data["complete_trace"]
 
 iterations = [t.i for t in trace]
 loss = [t.L for t in trace]
-σ_mean = [t.σ_mean for t in trace]
-σ_var = [t.σ_var for t in trace]
 
-σ_std = sqrt.(σ_var)
+σ_matrix = hcat([t.σ for t in trace]...)'
+num_layers = size(σ_matrix, 2)
 
 p1 = plot(
     iterations, loss,
@@ -37,15 +35,21 @@ p1 = plot(
     legend = false,
 )
 
+layer_labels = ["Conv1 (Spatial)", "Conv2 (Spatial)", "Dense1 (Global)", "Dense2 (Classification)"]
+
+if num_layers != 4
+    layer_labels = ["Layer $i" for i in 1:num_layers]
+end
+
 p2 = plot(
-    iterations, σ_mean,
-    ribbon = σ_std,
-    fillalpha = 0.3,
-    title = "Strategy Parameter Dynamics",
+    iterations, σ_matrix,
+    title = "Layer-wise Strategy Parameter Dynamics",
     xlabel = "Iteration",
-    ylabel = L"\mathrm{E}[\sigma] \pm \sqrt{\mathrm{Var}(\sigma)}",
-    color = :blue,
-    legend = false,
+    ylabel = L"\sigma_l",
+    labels = reshape(layer_labels, 1, :),
+    legend = :topright,
+    linewidth = 1.5,
+    alpha = 0.8
 )
 
 fig = plot(p1, p2, layout = (2, 1), size = (1200, 900), margin = 5Plots.mm)
