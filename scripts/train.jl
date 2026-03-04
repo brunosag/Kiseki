@@ -1,4 +1,9 @@
+Base.exit_on_sigint(false)
 using Pkg; Pkg.activate(joinpath(@__DIR__, ".."))
+
+ENV["CUDNN_DETERMINISTIC"] = "1"
+ENV["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+
 using Kiseki, Random, ArgParse, LuxCUDA
 
 
@@ -24,7 +29,13 @@ function main()
     mode = parsed_args["mode"]
     resume_target = parsed_args["resume"]
 
-    rng = Xoshiro(42)
+    seed = 42
+    rng = Xoshiro(seed)
+    Random.seed!(seed)
+
+    if isdefined(LuxCUDA, :CUDA)
+        LuxCUDA.CUDA.seed!(seed)
+    end
 
     checkpoint_dir = abspath(joinpath(@__DIR__, "..", "checkpoints"))
     mkpath(checkpoint_dir)
@@ -52,6 +63,18 @@ function main()
 end
 
 
-if abspath(PROGRAM_FILE) == @__FILE__
-    main()
+function start()
+    try
+        main()
+    catch e
+        if e isa InterruptException
+            exit(0)
+        else
+            rethrow(e)
+        end
+    end
+    return
 end
+
+
+start()

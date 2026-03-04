@@ -1,7 +1,7 @@
 module Callbacks
 
-using Printf
-using ComponentArrays
+using Printf, ComponentArrays
+using Lux: cpu_device
 using ..Evaluation: accuracy
 using ..Checkpoints: save_checkpoint
 
@@ -27,7 +27,7 @@ end
 
 
 function (cb::CheckpointCallback)(
-        global_i::Int, θ::Vector{Float32}, L::Float32, σ::Float32
+        global_i::Int, θ_dev, L::Float32, σ::Float32, opt_state_dev = nothing
     )
 
     current_time = time()
@@ -36,10 +36,12 @@ function (cb::CheckpointCallback)(
 
     push!(cb.complete_trace, (i = global_i, L = L, σ = σ))
 
-    base_log = @sprintf("i = %-*d      L(𝛉) = %.6f      Δt = %.2fs      σ = %.5f", ndigits(cb.I), global_i, L, elapsed, σ)
+    base_log = @sprintf("i = %-*d      L(𝛉) = %-*.6f      Δt = %.3fs      σ = %.5f", ndigits(cb.I), global_i, 8, L, elapsed, σ)
 
     if global_i % cb.checkpoint_Δi == 0
-        θ_current = ComponentArray(θ, cb.axes)
+        cpu_dev_fn = cpu_device()
+        θ_cpu = Vector{Float32}(cpu_dev_fn(θ_dev))
+        θ_current = ComponentArray(θ_cpu, cb.axes)
 
         raw_acc = accuracy(cb.model, θ_current, cb.st, cb.test_dataloader)
         test_acc = raw_acc > 1.0 ? raw_acc / 100.0 : raw_acc
@@ -49,15 +51,19 @@ function (cb::CheckpointCallback)(
         if test_acc > cb.best_test_acc
             cb.best_test_acc = test_acc
 
-            checkpoint_data = Dict(
+            checkpoint_data = Dict{String, Any}(
                 "i" => global_i,
                 "L" => L,
-                "θ" => θ,
+                "θ" => θ_cpu,
                 "σ" => σ,
                 "test_acc" => test_acc,
                 "complete_trace" => cb.complete_trace,
                 "accuracy_trace" => cb.accuracy_trace
             )
+
+            if !isnothing(opt_state_dev)
+                checkpoint_data["opt_state"] = cpu_dev_fn(opt_state_dev)
+            end
 
             save_checkpoint(checkpoint_data, test_acc, global_i, cb.prev_checkpoint, cb.save_dir, cb.prefix)
 
