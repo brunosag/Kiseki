@@ -8,15 +8,16 @@ using StatsBase: sample
 
 export load_MNIST
 
-struct BalancedDataLoader{T <: AbstractArray, V <: AbstractVector}
+struct BalancedDataLoader{T <: AbstractArray, V <: AbstractVector, R <: AbstractRNG}
     X::T
     y::V
     batchsize::Int
     class_groups::Vector{Vector{Int}}
     samples_per_class::Int
     n_batches::Int
+    rng::R
 
-    function BalancedDataLoader(X::T, y::V, batchsize::Int) where {T <: AbstractArray, V <: AbstractVector}
+    function BalancedDataLoader(X::T, y::V, batchsize::Int, rng::R) where {T <: AbstractArray, V <: AbstractVector, R <: AbstractRNG}
         classes = sort(unique(y))
         n_classes = length(classes)
 
@@ -28,14 +29,14 @@ struct BalancedDataLoader{T <: AbstractArray, V <: AbstractVector}
         class_groups = [findall(==(c), y) for c in classes]
         n_batches = minimum(length.(class_groups)) ÷ samples_per_class
 
-        return new{T, V}(X, y, batchsize, class_groups, samples_per_class, n_batches)
+        return new{T, V, R}(X, y, batchsize, class_groups, samples_per_class, n_batches, rng)
     end
 end
 
 Base.length(d::BalancedDataLoader) = d.n_batches
 
 function Base.iterate(d::BalancedDataLoader)
-    shuffled_groups = [shuffle(group) for group in d.class_groups]
+    shuffled_groups = [shuffle(d.rng, group) for group in d.class_groups]
     return iterate(d, (shuffled_groups, 1))
 end
 
@@ -54,7 +55,7 @@ function Base.iterate(d::BalancedDataLoader, state)
         append!(batch_idx, @view group[start_idx:end_idx])
     end
 
-    shuffle!(batch_idx)
+    shuffle!(d.rng, batch_idx)
 
     X_raw, y_raw = getobs((d.X, d.y), batch_idx)
 
@@ -82,7 +83,7 @@ function load_MNIST(; rng::AbstractRNG, batchsize::Int, balanced::Bool = false)
     X_test, y_test = test_data.features, test_data.targets
 
     train_loader = balanced ?
-        BalancedDataLoader(X_train, y_train, batchsize) :
+        BalancedDataLoader(X_train, y_train, batchsize, rng) :
         DataLoader((X_train, y_train); batchsize, rng, collate, shuffle = true)
     test_loader = DataLoader((X_test, y_test); batchsize, collate)
 

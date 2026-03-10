@@ -22,7 +22,7 @@ const logitcrossentropy = Lux.CrossEntropyLoss(; logits = Val(true))
     γᵢ::Float32 = 0.2   # fitness inheritance decay
 end
 
-function mutate!(O, P, as_idx, U₁, U₂, rngs, r, m, γₘ)
+function mutate!(O, P, as_idx, U₁, U₂, rngs, r, m)
     return @batch for i in 1:length(as_idx)
         tid = threadid()
         u₁ = @view U₁[:, tid]
@@ -72,7 +72,7 @@ function train_LEEA(; seed::Int, batchsize::Int, generations::Int)
 
         as_idx = sample(rng, wheel_idx, wheel_w, num_as)
 
-        mutate!(O, P, as_idx, U₁, U₂, rngs, r, m, γₘ)
+        mutate!(O, P, as_idx, U₁, U₂, rngs, r, m)
         m *= γₘ
 
         @show O[1:10, 1]
