@@ -1,9 +1,7 @@
 module LEEA
 
 import Lux
-using CUDA
-using LuxCUDA
-using Printf
+using CUDA, LuxCUDA, Printf, Dates
 using Random: Xoshiro, rand!
 using StatsBase: Weights, sample, sample!
 using OneHotArrays: onecold
@@ -20,10 +18,11 @@ const logitcrossentropy = Lux.CrossEntropyLoss(; logits = Val(true))
     N::Int = 1000       # population size
     r::Float32 = 0.04   # mutation rate
     m::Float32 = 0.03   # mutation power
-    γₘ::Float32 = 0.99  # mutation power decay
+    γ::Float32 = 0.99   # mutation power decay
     p::Float32 = 0.4    # selection proportion
     s::Float32 = 0.5    # sexual reproduction proportion
     d::Float32 = 0.2    # fitness inheritance decay
+    pat_lim::Int = 50   # generations to wait before decaying m
 end
 
 function evaluate_population!(fₚ, fₒ, model, P, X, Y, st, pₐ, p₁, p₂, N, Nₐ, d, gen, re)
@@ -85,7 +84,7 @@ function reproduce_sexual!(O, P, p₁, p₂, Nₛ, Nₐ)
     return
 end
 
-function evaluate_best(fₒ, P, st, model, dataloader, dev, gen, re, t₀, best_acc)
+function evaluate_best(fₒ, P, st, model, dataloader, dev, gen, re, t₀, best_acc, pat, pat_lim)
     best_idx = argmax(fₒ)
     θ = re(@view(P[:, best_idx]))
 
@@ -103,18 +102,23 @@ function evaluate_best(fₒ, P, st, model, dataloader, dev, gen, re, t₀, best_
 
     acc = (correct / total) * 100.0
     Δt = time() - t₀
-    @printf "i = %i        Accuracy = %.2f%%        Δt = %.2fs\n" gen acc Δt
+    base_str = @sprintf "i = %i      Δt = %.2fs      Accuracy = %.2f%%" gen Δt acc
 
     if acc > best_acc
-        serialize("best_parameters.jls", θ |> Lux.cpu_device())
+        println(base_str)
+        time_str = Dates.format(Dates.now(), "yyyy-mm-ddTHHMMSS")
+        filename = @sprintf "LEEA_%ia_%ii_%s.jls" round(Int, acc * 100.0) gen time_str
+        serialize(filename, θ |> Lux.cpu_device())
         return acc
+    else
+        println(base_str, @sprintf " [Best: %.2f%% %i/%i]" best_acc (pat + 1) pat_lim)
     end
 
     return best_acc
 end
 
 function train_LEEA(; seed::Int = 42, batchsize::Int = 1000, generations::Int = 900000)
-    (; N, r, m, γₘ, p, s, d) = LEEAConfig()
+    (; N, r, m, γ, p, s, d, pat_lim) = LEEAConfig()
 
     rng = Xoshiro(seed)
     dev = Lux.gpu_device()
@@ -139,6 +143,7 @@ function train_LEEA(; seed::Int = 42, batchsize::Int = 1000, generations::Int = 
     pₐ, p₁, p₂ = alloc(Int, Nₐ), alloc(Int, Nₛ), alloc(Int, Nₛ)
 
     best_acc = 0.0
+    pat = 0
 
     for i in 1:generations
         t₀ = time()
@@ -149,9 +154,21 @@ function train_LEEA(; seed::Int = 42, batchsize::Int = 1000, generations::Int = 
         reproduce_assexual!(O, P, pₐ, Nₐ, r, m)
         reproduce_sexual!(O, P, p₁, p₂, Nₛ, Nₐ)
 
-        best_acc = evaluate_best(fₒ, P, st, model, test_dataloader, dev, i, re, t₀, best_acc)
+        acc = evaluate_best(fₒ, P, st, model, test_dataloader, dev, i, re, t₀, best_acc, pat, pat_lim)
 
-        m *= γₘ
+        if acc > best_acc
+            best_acc = acc
+            pat = 0
+        else
+            pat += 1
+        end
+
+        if pat >= pat_lim
+            println("m: $m -γ→ $(m * γ)")
+            m *= γ
+            pat = 0
+        end
+
         P, O = O, P
         fₚ, fₒ = fₒ, fₚ
     end

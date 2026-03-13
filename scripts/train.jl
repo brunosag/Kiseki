@@ -9,7 +9,7 @@ function parse_commandline()
         "--batchsize", "-b"
         arg_type = Int
         required = false
-        default = 10
+        default = 1000
 
         "--seed", "-s"
         arg_type = Int
