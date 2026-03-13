@@ -8,6 +8,7 @@ using Random: Xoshiro, rand!
 using StatsBase: Weights, sample, sample!
 using OneHotArrays: onecold
 using Optimisers: destructure
+using Serialization: serialize
 using ..Data: load_MNIST
 using ..Models: CNN_2C2D_MNIST
 
@@ -16,7 +17,7 @@ export train_LEEA
 const logitcrossentropy = Lux.CrossEntropyLoss(; logits = Val(true))
 
 @kwdef struct LEEAConfig
-    N::Int = 200        # population size
+    N::Int = 1000       # population size
     r::Float32 = 0.04   # mutation rate
     m::Float32 = 0.03   # mutation power
     γₘ::Float32 = 0.99  # mutation power decay
@@ -84,7 +85,7 @@ function reproduce_sexual!(O, P, p₁, p₂, Nₛ, Nₐ)
     return
 end
 
-function evaluate_best(fₒ, P, st, model, dataloader, dev, gen, re)
+function evaluate_best(fₒ, P, st, model, dataloader, dev, gen, re, t₀, best_acc)
     best_idx = argmax(fₒ)
     θ = re(@view(P[:, best_idx]))
 
@@ -101,9 +102,15 @@ function evaluate_best(fₒ, P, st, model, dataloader, dev, gen, re)
     end
 
     acc = (correct / total) * 100.0
-    @printf "i = %i        Accuracy = %.2f%%\n" gen acc
+    Δt = time() - t₀
+    @printf "i = %i        Accuracy = %.2f%%        Δt = %.2fs\n" gen acc Δt
 
-    return
+    if acc > best_acc
+        serialize("best_parameters.jls", θ |> Lux.cpu_device())
+        return acc
+    end
+
+    return best_acc
 end
 
 function train_LEEA(; seed::Int = 42, batchsize::Int = 1000, generations::Int = 900000)
@@ -131,7 +138,10 @@ function train_LEEA(; seed::Int = 42, batchsize::Int = 1000, generations::Int = 
     fₚ, fₒ = alloc(Float32, N), alloc(Float32, N)
     pₐ, p₁, p₂ = alloc(Int, Nₐ), alloc(Int, Nₛ), alloc(Int, Nₛ)
 
+    best_acc = 0.0
+
     for i in 1:generations
+        t₀ = time()
         X, Y = popfirst!(train_dataloader) |> dev
 
         evaluate_population!(fₚ, fₒ, model, P, X, Y, st, pₐ, p₁, p₂, N, Nₐ, d, i, re)
@@ -139,7 +149,7 @@ function train_LEEA(; seed::Int = 42, batchsize::Int = 1000, generations::Int = 
         reproduce_assexual!(O, P, pₐ, Nₐ, r, m)
         reproduce_sexual!(O, P, p₁, p₂, Nₛ, Nₐ)
 
-        evaluate_best(fₒ, P, st, model, test_dataloader, dev, i, re)
+        best_acc = evaluate_best(fₒ, P, st, model, test_dataloader, dev, i, re, t₀, best_acc)
 
         m *= γₘ
         P, O = O, P
