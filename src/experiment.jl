@@ -2,6 +2,7 @@ module experiment
 
 import Lux
 import Base: run
+using LuxCUDA
 using Printf
 using Random: AbstractRNG, Xoshiro, TaskLocalRNG
 using Optimisers: destructure
@@ -15,32 +16,31 @@ export Experiment, ExperimentState, init, run
 @kwdef struct Experiment
     seed::Int = 42
     batchsize::Int = 500
-    max_i::Int = 5
-    target_acc::Float64 = 1.0
+    max_i::Int = 500000
+    target_acc::Float64 = 100.0
     opt::AbstractOptimizer = LEEA()
 end
 
 mutable struct ExperimentState
     rng
     ops
-    train_dataloader
-    test_dataloader
+    train_loader
+    val_set
+    test_loader
     best_acc
-    pat
     i
 end
 
-function init(exp::Experiment, dev, model)
+function init(exp::Experiment, model, dev)
+    LuxCUDA.CUDA.seed!(exp.seed)
+
     rng = Xoshiro(exp.seed)
     ops = init(exp.opt, model, rng, dev)
-    train_dataloader, test_dataloader = load_MNIST(rng, exp.batchsize)
+    train_loader, val_set, test_loader = load_MNIST(rng, exp.batchsize, dev, val_size = 10_000)
     best_acc = 0.0
-    pat = 0
     i = 1
 
-    return ExperimentState(
-        rng, ops, train_dataloader, test_dataloader, best_acc, pat, i
-    )
+    return ExperimentState(rng, ops, train_loader, val_set, test_loader, best_acc, i)
 end
 
 function run(exp::Experiment; est::Union{ExperimentState, Nothing} = nothing)
@@ -50,17 +50,24 @@ function run(exp::Experiment; est::Union{ExperimentState, Nothing} = nothing)
     re = destructure(Lux.initialparameters(TaskLocalRNG(), model))[2]
 
     if isnothing(est)
-        est = init(exp, dev, model)
+        est = init(exp, model, dev)
     end
 
     while est.i <= exp.max_i && est.best_acc < exp.target_acc
         t₀ = time()
-        X, Y = popfirst!(est.train_dataloader) |> dev
+        X, Y = popfirst!(est.train_loader) |> dev
 
-        L, etc = step!(exp.opt, est.ops, re, model, st, X, Y, est.rng)
+        L, acc, etc = step!(exp.opt, est.ops, re, model, st, X, Y, est.rng, est.best_acc, est.val_set)
 
         Δt = time() - t₀
-        @printf "i = %-*d    Δt = %.2fs    L = %.4f    %s\n" ndigits(exp.max_i) est.i Δt L etc
+        base_log = @sprintf "i = %-*d      Δt = %.2fs      L = %.4f      %s      Acc. = %-*.2f%%" ndigits(exp.max_i) est.i Δt L etc 5 acc
+
+        if acc > est.best_acc
+            println(base_log)
+            est.best_acc = acc
+        else
+            @printf "%s [Best: %-*.2f%%]\n" base_log 5 est.best_acc
+        end
 
         est.i += 1
     end

@@ -1,6 +1,6 @@
 Base.exit_on_sigint(false)
 using Pkg; Pkg.activate(joinpath(@__DIR__, ".."))
-using Kiseki, ArgParse, LuxCUDA
+using Kiseki, ArgParse
 
 function parse_commandline()
     s = ArgParseSettings()
@@ -19,7 +19,7 @@ function parse_commandline()
         "--iterations", "-i"
         arg_type = Int
         required = false
-        default = 5
+        default = 500000
     end
 
     return parse_args(s)

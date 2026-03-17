@@ -5,6 +5,7 @@ using Printf
 using Random: AbstractRNG, rand!
 using Optimisers: destructure
 using StatsBase: Weights, sample, sample!
+using OneHotArrays: onecold
 using ..optimizers
 
 export LEEA, LEEAState, init, step!
@@ -33,7 +34,6 @@ mutable struct LEEAState{M <: AbstractMatrix{Float32}} <: AbstractOptimizerState
     m::Float32
     pat::Int
     is_first_step::Bool
-    improved::Bool
 end
 
 function init(opt::LEEA, model, rng, dev)
@@ -47,11 +47,11 @@ function init(opt::LEEA, model, rng, dev)
     fₚ, fₒ = alloc(Float32, opt.N), alloc(Float32, opt.N)
     pₐ, p₁, p₂ = alloc(Int, Nₐ), alloc(Int, Nₛ), alloc(Int, Nₛ)
 
-    return LEEAState(P, O, fₚ, fₒ, pₐ, p₁, p₂, opt.m₀, 0, true, false)
+    return LEEAState(P, O, fₚ, fₒ, pₐ, p₁, p₂, opt.m₀, 0, true)
 end
 
 function evaluate_fitness!(opt::LEEA, ops::LEEAState, re, model, st, X, Y)
-    best_loss = Inf32
+    best_loss, best_idx = Inf32, 0
 
     for j in 1:opt.N
         θ = re(@view(ops.P[:, j]))
@@ -60,12 +60,15 @@ function evaluate_fitness!(opt::LEEA, ops::LEEAState, re, model, st, X, Y)
 
         if L < best_loss
             best_loss = L
+            best_idx = j
         end
 
         ops.fₒ[j] = 1.0f0 / (1.0f0 + L)
     end
 
-    return best_loss
+    best_θ = re(@view(ops.P[:, best_idx]))
+
+    return best_loss, best_θ
 end
 
 function inherit_fitness!(opt::LEEA, ops::LEEAState)
@@ -136,8 +139,18 @@ function reproduce_sexual!(ops::LEEAState)
     return
 end
 
-function update_patience!(opt::LEEA, ops::LEEAState)
-    if ops.improved
+function evaluate_individual(θ, model, st, val_set)
+    X, Y = val_set
+    Ŷ, _ = model(X, θ, st)
+
+    correct = sum(onecold(Array(Ŷ), 0:9) .== Y)
+    total = length(Y)
+
+    return (correct / total) * 100.0
+end
+
+function update_patience!(opt::LEEA, ops::LEEAState, acc, best_acc)
+    if acc > best_acc
         ops.pat = 0
     else
         ops.pat += 1
@@ -150,19 +163,24 @@ function update_patience!(opt::LEEA, ops::LEEAState)
     return
 end
 
-function step!(opt::LEEA, ops::LEEAState, re, model, st, X, Y, rng)
-    best_loss = evaluate_fitness!(opt::LEEA, ops::LEEAState, re, model, st, X, Y)
+function step!(
+        opt::LEEA, ops::LEEAState, re, model, st, X, Y, rng, best_acc, val_set
+    )
+    best_loss, best_θ = evaluate_fitness!(opt, ops, re, model, st, X, Y)
 
     inherit_fitness!(opt, ops)
     select_parents!(opt, ops, rng)
     reproduce_assexual!(opt, ops)
     reproduce_sexual!(ops)
-    update_patience!(opt, ops)
+
+    acc = evaluate_individual(best_θ, model, st, val_set)
+
+    update_patience!(opt, ops, acc, best_acc)
 
     ops.P, ops.O = ops.O, ops.P
     ops.fₚ, ops.fₒ = ops.fₒ, ops.fₚ
 
-    return best_loss, @sprintf("m = %.4f", ops.m)
+    return best_loss, acc, @sprintf("m = %.4f", ops.m)
 end
 
 end

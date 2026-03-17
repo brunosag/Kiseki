@@ -75,21 +75,58 @@ function collate(batch_data)
     return (Xᵢ, Yᵢ)
 end
 
-function load_MNIST(rng::AbstractRNG, batchsize::Int; balanced::Bool = true)
+function load_MNIST(rng::AbstractRNG, batchsize::Int, dev; balanced::Bool = true, val_size::Int = 0)
     train_data = MNIST(:train)
     test_data = MNIST(:test)
 
-    X_train, y_train = train_data.features, train_data.targets
+    X_train_full, y_train_full = train_data.features, train_data.targets
     X_test, y_test = test_data.features, test_data.targets
+
+    if val_size > 0
+        classes = sort(unique(y_train_full))
+        n_classes = length(classes)
+
+        if val_size % n_classes != 0
+            throw(ArgumentError("Validation size must be a multiple of $n_classes for exact balancing."))
+        end
+
+        val_per_class = val_size ÷ n_classes
+
+        train_idx = Int[]
+        val_idx = Int[]
+
+        for c in classes
+            c_idx = findall(==(c), y_train_full)
+            shuffle!(rng, c_idx)
+            append!(val_idx, @view c_idx[1:val_per_class])
+            append!(train_idx, @view c_idx[(val_per_class + 1):end])
+        end
+
+        shuffle!(rng, train_idx)
+        shuffle!(rng, val_idx)
+
+        X_train, y_train = getobs((X_train_full, y_train_full), train_idx)
+        X_val_raw, y_val_raw = getobs((X_train_full, y_train_full), val_idx)
+
+        X_val = dev(reshape(X_val_raw, 28, 28, 1, :))
+        Y_val_cold = y_val_raw
+    else
+        X_train, y_train = X_train_full, y_train_full
+    end
 
     train_loader = balanced ?
         BalancedDataLoader(X_train, y_train, batchsize, rng) :
         DataLoader((X_train, y_train); batchsize, rng, collate, shuffle = true)
+
     test_loader = DataLoader((X_test, y_test); batchsize, collate)
 
     stateful_train_loader = Iterators.Stateful(Iterators.cycle(train_loader))
 
-    return (stateful_train_loader, test_loader)
+    if val_size > 0
+        return (stateful_train_loader, (X_val, Y_val_cold), test_loader)
+    else
+        return (stateful_train_loader, test_loader)
+    end
 end
 
 end
