@@ -1,25 +1,11 @@
-module experiment
-
-import Lux
-import Base: run
-using LuxCUDA
-using Printf
-using Random: AbstractRNG, Xoshiro, TaskLocalRNG
-using Optimisers: destructure
-using OneHotArrays: onecold
-import ..optimizers: init
-using ..optimizers
-using ..models
-using ..data
-
-export Experiment, ExperimentState, init, run
+const logitcrossentropy = Lux.CrossEntropyLoss(; logits = Val(true))
 
 @kwdef struct Experiment
     seed::Int = 42
     batchsize::Int = 500
     max_i::Int = 500000
     target_acc::Float64 = 100.0
-    opt::AbstractOptimizer = SGD()
+    opt::AbstractOptimizer = LEEA()
 end
 
 mutable struct ExperimentState
@@ -71,7 +57,7 @@ function run(exp::Experiment; est::Union{ExperimentState, Nothing} = nothing)
         L, acc, etc = step!(exp.opt, est.ops, re, model, st, X, Y, est.rng, est.best_acc, est.val_set, evaluate)
 
         Δt = time() - t₀
-        base_log = @sprintf "i = %-*d      Δt = %.2fs      L = %.4f      %sAcc. = %-*.2f%%" ndigits(exp.max_i) est.i Δt L (isnothing(etc) ? (etc + "      ") : "") 5 acc
+        base_log = @sprintf "i = %-*d      Δt = %.2fs      L = %.4f      %sAcc. = %-*.2f%%" ndigits(exp.max_i) est.i Δt L (!isnothing(etc) ? ("$etc      ") : "") 5 acc
 
         if acc > est.best_acc
             println(base_log)
@@ -83,6 +69,4 @@ function run(exp::Experiment; est::Union{ExperimentState, Nothing} = nothing)
         est.i += 1
     end
     return
-end
-
 end

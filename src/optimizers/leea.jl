@@ -1,17 +1,3 @@
-module leea
-
-import Lux
-import ..optimizers: AbstractOptimizer, AbstractOptimizerState, init, step!
-using Printf
-using Random: AbstractRNG, rand!
-using Optimisers: destructure
-using StatsBase: Weights, sample, sample!
-using OneHotArrays: onecold
-
-export LEEA, LEEAState, init, step!
-
-const logitcrossentropy = Lux.CrossEntropyLoss(; logits = Val(true))
-
 @kwdef struct LEEA <: AbstractOptimizer
     N::Int = 1000        # population size
     r::Float32 = 0.04    # mutation rate
@@ -171,6 +157,4 @@ function step!(
     ops.fₚ, ops.fₒ = ops.fₒ, ops.fₚ
 
     return best_loss, acc, @sprintf("m = %.4f", ops.m)
-end
-
 end

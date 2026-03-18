@@ -1,13 +1,3 @@
-module data
-
-using MLDatasets: MNIST
-using MLUtils: DataLoader, getobs, batch
-using OneHotArrays: onehotbatch
-using Random: AbstractRNG, shuffle, shuffle!
-using StatsBase: sample
-
-export load_MNIST
-
 struct BalancedDataLoader{T <: AbstractArray, V <: AbstractVector, R <: AbstractRNG}
     X::T
     y::V
@@ -127,6 +117,4 @@ function load_MNIST(rng::AbstractRNG, batchsize::Int, dev; balanced::Bool = true
     else
         return (stateful_train_loader, test_loader)
     end
-end
-
 end

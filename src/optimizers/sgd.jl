@@ -1,14 +1,3 @@
-module sgd
-
-import Lux, Zygote
-import ..optimizers: AbstractOptimizer, AbstractOptimizerState, init, step!
-using Optimisers: Descent
-using ADTypes: AutoZygote
-
-export SGD, SGDState, init, step!
-
-const logitcrossentropy = Lux.CrossEntropyLoss(; logits = Val(true))
-
 @kwdef struct SGD <: AbstractOptimizer
     η::Float32 = 0.01f0
 end
@@ -35,6 +24,4 @@ function step!(
     acc = evaluate(ops.θ, model, st, val_set)
 
     return loss, acc, nothing
-end
-
 end
