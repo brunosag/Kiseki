@@ -1,3 +1,6 @@
+adapt_model(model, device::AbstractCPUDevice) = Lux.ToSimpleChainsAdaptor((28, 28, 1))(model)
+adapt_model(model, device::AbstractGPUDevice) = model
+
 const CNN_2C2D_MNIST = Chain(
     Conv((3, 3), 1 => 8, relu; init_weight = kaiming_normal),
     MaxPool((2, 2)),

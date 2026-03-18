@@ -7,11 +7,12 @@ const logitcrossentropy = Lux.CrossEntropyLoss(; logits = Val(true))
     target_acc::Float64 = 100.0
     opt::AbstractOptimizer = LEEA()
     model::Lux.AbstractLuxLayer = CNN_2C2D_MNIST
-    device::AbstractDevice = Lux.cpu_device()
+    device::AbstractDevice = Lux.gpu_device()
 end
 
 mutable struct ExperimentState
     rng
+    model
     ops
     train_loader
     val_set
@@ -24,14 +25,15 @@ function init(exp::Experiment)
     LuxCUDA.CUDA.seed!(exp.seed)
 
     rng = Xoshiro(exp.seed)
-    ops = init(exp.opt, exp.model, exp.device, rng)
+    model = adapt_model(exp.model, exp.device)
+    ops = init(exp.opt, model, exp.device, rng)
     train_loader, val_set, test_loader = load_MNIST(
         rng, exp.batchsize, exp.device, val_size = 10_000
     )
     best_acc = 0.0
     i = 1
 
-    return ExperimentState(rng, ops, train_loader, val_set, test_loader, best_acc, i)
+    return ExperimentState(rng, model, ops, train_loader, val_set, test_loader, best_acc, i)
 end
 
 function evaluate(θ, model, st, val_set)
@@ -45,20 +47,20 @@ function evaluate(θ, model, st, val_set)
 end
 
 function run(exp::Experiment; est::Union{ExperimentState, Nothing} = nothing)
-    st = Lux.testmode(Lux.initialstates(TaskLocalRNG(), exp.model))
-
     if isnothing(est)
         est = init(exp)
     end
+
+    st = Lux.testmode(Lux.initialstates(TaskLocalRNG(), est.model))
 
     while est.i <= exp.max_i && est.best_acc < exp.target_acc
         t₀ = time()
         X, Y = popfirst!(est.train_loader) |> exp.device
 
-        L = step!(exp.opt, est.ops, exp.model, st, X, Y, est.rng)
+        L = step!(exp.opt, est.ops, est.model, st, X, Y, est.rng)
 
         θ = get_best_params(est.ops)
-        acc = evaluate(θ, exp.model, st, est.val_set)
+        acc = evaluate(θ, est.model, st, est.val_set)
 
         update_scheduler!(exp.opt, est.ops, acc, est.best_acc)
 

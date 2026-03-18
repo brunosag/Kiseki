@@ -42,7 +42,7 @@ end
 function evaluate_fitness!(opt::LEEA, ops::LEEAState, model, st, X, Y)
     best_loss = Inf32
 
-    for j in 1:opt.N
+    Threads.@threads for j in 1:opt.N
         θ = ops.re(@view ops.P[:, j])
         Ŷ, _ = model(X, θ, st)
         L = Float32(logitcrossentropy(Ŷ, Y))

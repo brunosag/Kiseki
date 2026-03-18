@@ -1,6 +1,6 @@
 module Kiseki
 
-import Lux, Zygote
+import Lux, Zygote, SimpleChains
 import Base: run
 using LuxCUDA
 using Printf
@@ -13,13 +13,10 @@ using MLDatasets: MNIST
 using MLUtils: DataLoader, getobs, batch
 using Lux: Chain, Conv, MaxPool, FlattenLayer, Dense, relu
 using WeightInitializers: kaiming_normal
-using MLDataDevices: AbstractDevice
+using MLDataDevices: AbstractDevice, AbstractCPUDevice, AbstractGPUDevice
 using Polyester: @batch
 
-export load_MNIST, CNN_2C2D_MNIST, AbstractOptimizer, AbstractOptimizerState
-export LEEA, LEEAState, SGD, SGDState
-export init, step!
-export Experiment, ExperimentState, run
+export Experiment, CNN_2C2D_MNIST, LEEA, SGD, run
 
 include("data.jl")
 include("models.jl")
