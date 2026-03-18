@@ -14,7 +14,6 @@ using MLUtils: DataLoader, getobs, batch
 using Lux: Chain, Conv, MaxPool, FlattenLayer, Dense, relu
 using WeightInitializers: kaiming_normal
 using MLDataDevices: AbstractDevice, AbstractCPUDevice, AbstractGPUDevice
-using Polyester: @batch
 
 export Experiment, CNN_2C2D_MNIST, LEEA, SGD, run
 

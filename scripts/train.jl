@@ -1,37 +1,56 @@
 Base.exit_on_sigint(false)
 using Pkg; Pkg.activate(joinpath(@__DIR__, ".."))
 using Kiseki, ArgParse
+using Lux: gpu_device, cpu_device
 
 function parse_commandline()
     s = ArgParseSettings()
 
     @add_arg_table s begin
-        "--batchsize", "-b"
-        arg_type = Int
-        required = false
-        default = 500
+        "--optimizer", "-o"
+        help = "leea | sgd"
+        range_tester = x -> lowercase(x) in ["leea", "sgd"]
+        default = "leea"
+
+        "--device", "-d"
+        help = "gpu | cpu"
+        range_tester = x -> lowercase(x) in ["gpu", "cpu"]
+        default = "gpu"
 
         "--seed", "-s"
         arg_type = Int
-        required = false
         default = 42
+
+        "--batchsize", "-b"
+        arg_type = Int
+        default = 500
 
         "--iterations", "-i"
         arg_type = Int
-        required = false
-        default = 500000
+        default = 100000
+
+        "--target-acc", "-t"
+        help = "[0.0, 100.0]"
+        arg_type = Float64
+        range_tester = x -> 0.0 <= x <= 100.0
+        default = 100.0
     end
 
     return parse_args(s)
 end
 
 function main()
-    parsed_args = parse_commandline()
+    args = parse_commandline()
+
+    opts = Dict("leea" => LEEA(), "sgd" => SGD())
 
     exp = Experiment(
-        seed = parsed_args["seed"],
-        batchsize = parsed_args["batchsize"],
-        max_i = parsed_args["iterations"]
+        opt = opts[lowercase(args["optimizer"])],
+        device = lowercase(args["device"]) == "cpu" ? cpu_device() : gpu_device(),
+        seed = args["seed"],
+        batchsize = args["batchsize"],
+        max_i = args["iterations"],
+        target_acc = args["target-acc"]
     )
 
     Kiseki.run(exp)
