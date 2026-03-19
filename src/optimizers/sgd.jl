@@ -14,7 +14,7 @@ function init(opt::SGD, model, dev, rng)
     return SGDState(θ, ts)
 end
 
-function step!(opt::SGD, ops::SGDState, model, st, X, Y, rng)
+function step!(opt::SGD, ops, ws, model, st, X, Y, rng)
     _, loss, _, ops.ts = Lux.Training.single_train_step!(
         AutoZygote(), logitcrossentropy, (X, Y), ops.ts
     )

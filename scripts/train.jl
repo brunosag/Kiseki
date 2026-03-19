@@ -1,5 +1,4 @@
 Base.exit_on_sigint(false)
-using Pkg; Pkg.activate(joinpath(@__DIR__, ".."))
 using Kiseki, ArgParse
 using Lux: gpu_device, cpu_device
 
@@ -7,6 +6,9 @@ function parse_commandline()
     s = ArgParseSettings()
 
     @add_arg_table s begin
+        "--resume", "-r"
+        default = nothing
+
         "--optimizer", "-o"
         help = "leea | sgd"
         range_tester = x -> lowercase(x) in ["leea", "sgd"]
@@ -53,7 +55,12 @@ function main()
         target_acc = args["target-acc"]
     )
 
-    Kiseki.run(exp)
+    if !isnothing(args["resume"])
+        est = load_checkpoint(args["resume"])
+        Kiseki.run(exp, est)
+    else
+        Kiseki.run(exp)
+    end
 
     return
 end

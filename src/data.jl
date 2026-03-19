@@ -52,7 +52,7 @@ function Base.iterate(d::BalancedDataLoader, state)
     Xᵢ = reshape(X_raw, 28, 28, 1, d.batchsize)
     Yᵢ = onehotbatch(y_raw, 0:9)
 
-    return ((Xᵢ, Yᵢ), (shuffled_groups, b + 1))
+    return (Xᵢ, Yᵢ), (shuffled_groups, b + 1)
 end
 
 function collate(batch_data)
@@ -62,10 +62,10 @@ function collate(batch_data)
     Xᵢ = reshape(batch(images), 28, 28, 1, :)
     Yᵢ = onehotbatch(labels, 0:9)
 
-    return (Xᵢ, Yᵢ)
+    return Xᵢ, Yᵢ
 end
 
-function load_MNIST(rng::AbstractRNG, batchsize::Int, dev; balanced::Bool = true, val_size::Int = 0)
+function load_MNIST(rng, batchsize, dev; balanced = true, val_size = 0)
     train_data = MNIST(:train)
     test_data = MNIST(:test)
 
@@ -108,13 +108,12 @@ function load_MNIST(rng::AbstractRNG, batchsize::Int, dev; balanced::Bool = true
         BalancedDataLoader(X_train, y_train, batchsize, rng) :
         DataLoader((X_train, y_train); batchsize, rng, collate, shuffle = true)
 
+    train_loader = Iterators.Stateful(Iterators.cycle(train_loader))
     test_loader = DataLoader((X_test, y_test); batchsize, collate)
 
-    stateful_train_loader = Iterators.Stateful(Iterators.cycle(train_loader))
-
     if val_size > 0
-        return (stateful_train_loader, (X_val, Y_val_cold), test_loader)
+        return train_loader, (X_val, Y_val_cold), test_loader
     else
-        return (stateful_train_loader, test_loader)
+        return train_loader, test_loader
     end
 end

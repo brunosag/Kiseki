@@ -2,8 +2,8 @@ const logitcrossentropy = Lux.CrossEntropyLoss(; logits = Val(true))
 
 @kwdef struct Experiment
     seed::Int = 42
-    batchsize::Int = 500
-    max_i::Int = 500000
+    batchsize::Int = 100
+    max_i::Int = 100000
     target_acc::Float64 = 100.0
     opt::AbstractOptimizer = LEEA()
     model::Lux.AbstractLuxLayer = CNN_2C2D_MNIST
@@ -12,28 +12,17 @@ end
 
 mutable struct ExperimentState
     rng
-    model
     ops
-    train_loader
-    val_set
-    test_loader
+    last_checkpoint
     best_acc
     i
 end
 
-function init(exp::Experiment)
+function init(exp::Experiment, model)
     LuxCUDA.CUDA.seed!(exp.seed)
-
     rng = Xoshiro(exp.seed)
-    model = adapt_model(exp.model, exp.device)
     ops = init(exp.opt, model, exp.device, rng)
-    train_loader, val_set, test_loader = load_MNIST(
-        rng, exp.batchsize, exp.device, val_size = 10_000
-    )
-    best_acc = 0.0
-    i = 1
-
-    return ExperimentState(rng, model, ops, train_loader, val_set, test_loader, best_acc, i)
+    return ExperimentState(rng, ops, nothing, 0.0, 1)
 end
 
 function evaluate(θ, model, st, val_set)
@@ -46,32 +35,65 @@ function evaluate(θ, model, st, val_set)
     return (correct / total) * 100.0
 end
 
-function run(exp::Experiment; est::Union{ExperimentState, Nothing} = nothing)
+function save_checkpoint!(est, exp)
+    opt_name = nameof(typeof(exp.opt))
+    acc_int = est.best_acc * 100
+    time_str = Dates.format(Dates.now(), "yyyy-mm-ddTHHMMSS")
+
+    base_name = @sprintf("%s_%ia_%ii_%s.jls", opt_name, acc_int, est.i, time_str)
+
+    filepath = joinpath("checkpoints", base_name)
+    mkpath(dirname(filepath))
+
+    if !isnothing(est.last_checkpoint)
+        rm(est.last_checkpoint)
+    end
+    est.last_checkpoint = filepath
+
+    return serialize(filepath, est)
+end
+
+load_checkpoint(filepath) = deserialize(filepath)
+
+fastforward(loader, i) = foreach(_ -> popfirst!(loader), 1:i)
+
+function run(exp, est = nothing)
+    model = adapt_model(CNN_2C2D_MNIST, exp.device)
+    st = Lux.testmode(Lux.initialstates(TaskLocalRNG(), model))
+    rng_data = Xoshiro(exp.seed)
+    train_loader, val_set, _ = load_MNIST(
+        rng_data, exp.batchsize, exp.device, val_size = 10_000
+    )
+
     if isnothing(est)
-        est = init(exp)
+        est = init(exp, model)
+    else
+        fastforward(train_loader, est.i)
+        est.i += 1
     end
 
-    st = Lux.testmode(Lux.initialstates(TaskLocalRNG(), est.model))
+    ws = init_workspace(exp.opt, est.ops)
 
     while est.i <= exp.max_i && est.best_acc < exp.target_acc
         t₀ = time()
-        X, Y = popfirst!(est.train_loader) |> exp.device
+        X, Y = popfirst!(train_loader) |> exp.device
 
-        L = step!(exp.opt, est.ops, est.model, st, X, Y, est.rng)
+        L = step!(exp.opt, est.ops, ws, model, st, X, Y, est.rng)
 
         θ = get_best_params(est.ops)
-        acc = evaluate(θ, est.model, st, est.val_set)
+        acc = evaluate(θ, model, st, val_set)
 
         update_scheduler!(exp.opt, est.ops, acc, est.best_acc)
 
         Δt = time() - t₀
-        base_log = @sprintf "i = %-*d      Δt = %.2fs      L = %.4f      Acc. = %-*.2f%%" ndigits(exp.max_i) est.i Δt L 5 acc
+        base_log = @sprintf("i = %-*d      Δt = %.2fs      L = %.4f      Acc. = %-*.2f%%", ndigits(exp.max_i), est.i, Δt, L, 5, acc)
 
         if acc > est.best_acc
             println(base_log)
             est.best_acc = acc
+            save_checkpoint!(est, exp)
         else
-            @printf "%s [Best: %-*.2f%%]\n" base_log 5 est.best_acc
+            @printf("%s [Best: %-*.2f%%]\n", base_log, 5, est.best_acc)
         end
 
         est.i += 1

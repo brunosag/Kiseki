@@ -1,6 +1,5 @@
 abstract type AbstractOptimizer end
 abstract type AbstractOptimizerState end
 
-update_scheduler!(
-    opt::AbstractOptimizer, ops::AbstractOptimizerState, acc, best_acc
-) = nothing
+init_workspace(opt::AbstractOptimizer, ops) = nothing
+update_scheduler!(opt::AbstractOptimizer, ops, acc, best_acc) = nothing
