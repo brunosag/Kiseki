@@ -78,7 +78,7 @@ function run(exp, est = nothing)
 
     while est.i <= exp.max_i && est.best_acc < exp.target_acc
         t₀ = time()
-        X, Y = popfirst!(train_loader) |> exp.device
+        X, Y = popfirst!(train_loader)
 
         L = step!(exp.opt, est.ops, ws, model, st, X, Y, est.rng)
 
